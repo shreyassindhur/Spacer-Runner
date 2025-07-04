@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Space Runner</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; font-family: sans-serif; background-color: #000; transition: background-color 2s ease; }
+    canvas { display: block; margin: auto; background: radial-gradient(ellipse at center, #000 0%, #000 100%); }
+    #startScreen, #pauseOverlay {
+      position: absolute; top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.8); color: white; z-index: 2;
+    }
+    #startScreen { flex-direction: column; z-index: 3; }
+    #startScreen button {
+      padding: 10px 20px; font-size: 18px; cursor: pointer;
+      background-color: #00f2ff; color: #000; border: none; border-radius: 5px;
+    }
+    #pauseOverlay { display: none; font-size: 40px; }
+    #spaceFact, #milestoneMessage {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ffffff;
+      font-size: 18px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px 20px;
+      border-radius: 10px;
+      max-width: 90vw;
+      text-align: center;
+      z-index: 4;
+    }
+    #spaceFact {
+      bottom: 20px;
+      font-style: italic;
+    }
+    #milestoneMessage {
+      top: 20px;
+      font-weight: bold;
+      color: #00f2ff;
+    }
+  </style>
+</head>
+<body>
+<div id="startScreen">
+  <h1>🚀 Space Runner</h1><br>
+  <h4>Beyond this button lies the infinite. Tap it!</h4><br>
+  <button onclick="startGame()">Start Game</button>
+</div>
+<div id="pauseOverlay">Paused</div>
+<div id="spaceFact"></div>
+<div id="milestoneMessage"></div>
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const startScreen = document.getElementById('startScreen');
+const pauseOverlay = document.getElementById('pauseOverlay');
+const spaceFactDiv = document.getElementById('spaceFact');
+const milestoneDiv = document.getElementById('milestoneMessage');
+let score = 0;
+let highScore = Number(localStorage.getItem('spaceHighScore')) || 0;
+let gameSpeed = 8;
+let gameOver = false;
+let frame = 0;
+let isDay = false;
+let paused = false;
+let animationId = null;
+let lastFactFrame = 0;
+let lastToggle = 0;
+let galaxyColor = '#000';
+let factTimeoutId = null;
+let milestoneTimeoutId = null;
+const satellite = { x: 80, y: 280, width: 50, height: 50, dy: 0, gravity: 1, jumpStrength: -18, grounded: true };
+const satelliteSkins = ['#00f2ff', '#00ff00', '#ff00ff'];
+let satelliteSkin = 0;
+const obstacles = [];
+const meteors = [];
+const comets = [];
+const debris = [];
+const blackHoles = [];
+const spaceFacts = [
+  "Neutron stars can spin at 600 rotations/sec.",
+  "One day on Venus is longer than its year.",
+  "There may be a planet made of diamonds!",
+  "A spoonful of neutron star weighs 1 billion tons.",
+  "The Milky Way will collide with Andromeda.",
+  "There’s a giant cloud of alcohol in space.",
+  "Space is completely silent.",
+  "Jupiter’s Red Spot storm is 300+ years old.",
+  "Saturn could float in water.",
+  "More stars than grains of sand on Earth."
+];
+const milestones = {
+  17: "🌑 You've reached the Moon!",
+  38: "🛰️ Low Earth Orbit",
+  60: "🚀 Past the ISS",
+  74: "🪐 Jupiter’s Orbit",
+  97: "🌌 Asteroid Belt",
+  145: "🛸 Saturn’s Rings",
+  200: "🧪 Kuiper Belt",
+  295: "🌀 Interstellar Space!"
+};
+function showRandomFact() {
+  if (factTimeoutId) clearTimeout(factTimeoutId);
+  spaceFactDiv.textContent = spaceFacts[Math.floor(Math.random() * spaceFacts.length)];
+  factTimeoutId = setTimeout(() => {
+    spaceFactDiv.textContent = '';
+    factTimeoutId = null;
+  }, 5000);
+}
+function showMilestone(message) {
+  if (milestoneTimeoutId) clearTimeout(milestoneTimeoutId);
+  milestoneDiv.textContent = message;
+  milestoneTimeoutId = setTimeout(() => {
+    milestoneDiv.textContent = '';
+    milestoneTimeoutId = null;
+  }, 5000);
+}
+function drawSatellite() {
+  ctx.fillStyle = satelliteSkins[satelliteSkin];
+  ctx.beginPath();
+  ctx.moveTo(satellite.x, satellite.y);
+  ctx.lineTo(satellite.x + satellite.width, satellite.y + satellite.height / 2);
+  ctx.lineTo(satellite.x, satellite.y + satellite.height);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillRect(satellite.x + 35, satellite.y + 10, 5, 30);
+}
+function drawObstacle(ob) {
+  const gradient = ctx.createRadialGradient(ob.x, ob.y, ob.size * 0.2, ob.x, ob.y, ob.size);
+  gradient.addColorStop(0, ob.innerColor);
+  gradient.addColorStop(1, ob.outerColor);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(ob.x, ob.y, ob.size, 0, Math.PI * 2);
+  ctx.fill();
+}
+function drawBlackHole(bh) {
+  ctx.save();
+  ctx.translate(bh.x, bh.y);
+  ctx.rotate((frame % 180) * 0.05);
+  ctx.beginPath();
+  ctx.arc(0, 0, bh.radius, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fill();
+  ctx.strokeStyle = '#9400d3';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.restore();
+  bh.x -= gameSpeed * 0.5;
+}
+function drawDebris() {
+  debris.forEach(d => {
+    ctx.fillStyle = 'gray';
+    ctx.fillRect(d.x, d.y, 2, 2);
+    d.x -= 0.5;
+    if (d.x < 0) d.x = canvas.width + Math.random() * 100;
+  });
+}
+function drawComets() {
+  comets.forEach((c, i) => {
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y);
+    ctx.lineTo(c.x - c.dx * 10, c.y - c.dy * 10);
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    c.x += c.dx;
+    c.y += c.dy;
+    if (c.x > canvas.width || c.y > canvas.height) comets.splice(i, 1);
+  });
+}
+function drawStars() {
+  ctx.fillStyle = galaxyColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 100; i++) {
+    ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 1, 1);
+  }
+  drawDebris();
+  drawComets();
+}
+function updateGalaxyTheme() {
+  if (milestones[score]) {
+    galaxyColor = `hsl(${Math.random() * 360}, 100%, 5%)`;
+    showMilestone(milestones[score]);
+  }
+}
+function spawnObstacle() {
+  const colors = [
+    { innerColor: '#ffd700', outerColor: '#ff8c00' },
+    { innerColor: '#add8e6', outerColor: '#00008b' },
+    { innerColor: '#d3d3d3', outerColor: '#696969' },
+    { innerColor: '#ff69b4', outerColor: '#8b008b' },
+  ];
+  const size = Math.random() * 20 + 20;
+  const x = canvas.width + Math.random() * 100;
+  const color = colors[Math.floor(Math.random() * colors.length)];
+  if (Math.random() < 0.1) {
+    blackHoles.push({ x, y: 250, radius: 25 });
+  } else {
+    obstacles.push({ x, y: 330, size, innerColor: color.innerColor, outerColor: color.outerColor });
+  }
+}
+function update() {
+  if (paused) return;
+  frame++;
+  drawStars();
+  if (frame % 100 === 0) comets.push({ x: -50, y: Math.random() * 300, dx: 6 + Math.random() * 3, dy: 1 });
+  drawComets();
+  if (debris.length < 30) debris.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height });
+  if (frame - lastFactFrame >= 300 || frame === 1) {
+    showRandomFact();
+    lastFactFrame = frame;
+  }
+  satellite.y += satellite.dy;
+  satellite.dy += satellite.gravity;
+  if (satellite.y >= 280) {
+    satellite.y = 280;
+    satellite.dy = 0;
+    satellite.grounded = true;
+  }
+  drawSatellite();
+  if (frame % Math.max(30, 80 - Math.floor(score / 2)) === 0) spawnObstacle();
+  obstacles.forEach((ob, i) => {
+    ob.x -= gameSpeed;
+    drawObstacle(ob);
+    const dx = satellite.x + satellite.width / 2 - ob.x;
+    const dy = satellite.y + satellite.height / 2 - ob.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < ob.size + satellite.width / 2 - 5) {
+      gameOver = true;
+      cancelAnimationFrame(animationId);
+    }
+    if (ob.x + ob.size < 0) {
+      obstacles.splice(i, 1);
+      score++;
+      updateGalaxyTheme();
+      if (score % 5 === 0) gameSpeed += score < 50 ? 0.4 : score < 120 ? 0.3 : 0.2;
+      if (score % 20 === 0) satelliteSkin = (satelliteSkin + 1) % satelliteSkins.length;
+    }
+  });
+  blackHoles.forEach((bh, i) => {
+    drawBlackHole(bh);
+    const dx = satellite.x + satellite.width / 2 - bh.x;
+    const dy = satellite.y + satellite.height / 2 - bh.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < bh.radius + satellite.width / 2 - 5) {
+      gameOver = true;
+      cancelAnimationFrame(animationId);
+    }
+    if (bh.x + bh.radius < 0) blackHoles.splice(i, 1);
+  });
+  ctx.fillStyle = '#fff';
+  ctx.font = '20px Arial';
+  ctx.fillText(`Score: ${score}`, 650, 30);
+  ctx.fillText(`High Score: ${highScore}`, 620, 60);
+  if (!gameOver) {
+    animationId = requestAnimationFrame(update);
+  } else {
+    if (score > highScore) {
+      highScore = score;
+      localStorage.setItem('spaceHighScore', highScore);
+    }
+    ctx.font = '40px Arial';
+    ctx.fillText('Game Over!', 300, 200);
+    ctx.font = '20px Arial';
+    ctx.fillText('Press Space to Restart', 310, 240);
+  }
+}
+function startGame() {
+  startScreen.style.display = 'none';
+  showRandomFact();
+  update();
+}
+document.addEventListener('keydown', (e) => {
+  if ((e.code === 'Space' || e.code === 'ArrowUp') && satellite.grounded && !paused) {
+    satellite.dy = satellite.jumpStrength;
+    satellite.grounded = false;
+  }
+  if (e.code === 'KeyP') {
+    paused = !paused;
+    pauseOverlay.style.display = paused ? 'flex' : 'none';
+    if (!paused) update();
+  }
+  if (gameOver && e.code === 'Space') {
+    location.reload();
+  }
+});
+</script>
+</body>
+</html>
