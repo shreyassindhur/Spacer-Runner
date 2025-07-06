@@ -63,7 +63,7 @@ const spaceFactDiv = document.getElementById('spaceFact');
 const milestoneDiv = document.getElementById('milestoneMessage');
 let score = 0;
 let highScore = Number(localStorage.getItem('spaceHighScore')) || 0;
-let gameSpeed = 8;
+let gameSpeed = 14;
 let gameOver = false;
 let frame = 0;
 let isDay = false;
@@ -151,13 +151,13 @@ function drawBlackHole(bh) {
   ctx.lineWidth = 3;
   ctx.stroke();
   ctx.restore();
-  bh.x -= gameSpeed * 0.5;
+  bh.x -= gameSpeed * 0.8;
 }
 function drawDebris() {
   debris.forEach(d => {
     ctx.fillStyle = 'gray';
     ctx.fillRect(d.x, d.y, 2, 2);
-    d.x -= 0.5;
+    d.x -= 0.8;
     if (d.x < 0) d.x = canvas.width + Math.random() * 100;
   });
 }
@@ -186,7 +186,7 @@ function drawStars() {
 }
 function updateGalaxyTheme() {
   if (milestones[score]) {
-    galaxyColor = `hsl(${Math.random() * 360}, 100%, 5%)`;
+    galaxyColor = `hsl(${Math.random() * 360}, 100%, 10%)`;
     showMilestone(milestones[score]);
   }
 }
@@ -240,7 +240,7 @@ function update() {
       obstacles.splice(i, 1);
       score++;
       updateGalaxyTheme();
-      if (score % 5 === 0) gameSpeed += score < 50 ? 0.4 : score < 120 ? 0.3 : 0.2;
+      if (score % 5 === 0) gameSpeed += score < 50 ? 0.8 : score < 120 ? 0.5 : 1.0;
       if (score % 20 === 0) satelliteSkin = (satelliteSkin + 1) % satelliteSkins.length;
     }
   });
